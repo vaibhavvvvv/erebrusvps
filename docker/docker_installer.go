@@ -32,39 +32,39 @@ func (d *DockerSetup) Install() error {
 	}{
 		{
 			description: "Updating system",
-			command:     "apt-get update && apt-get upgrade -y",
+			command:     "sudo apt-get update && sudo apt-get upgrade -y",
 		},
 		{
 			description: "Installing required packages",
-			command:     "apt-get install -y apt-transport-https ca-certificates curl software-properties-common",
+			command:     "sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common",
 		},
 		{
 			description: "Adding Docker's GPG key",
-			command:     "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg",
+			command:     "sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg",
 		},
 		{
 			description: "Setting up Docker repository",
-			command:     `echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null`,
+			command:     `sudo echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null`,
 		},
 		{
 			description: "Installing Docker Engine",
-			command:     "apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io",
+			command:     "sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io",
 		},
 		{
 			description: "Setting up Docker group",
-			command:     "groupadd docker || true && usermod -aG docker $USER",
+			command:     "sudo groupadd docker || true && sudo usermod -aG docker $USER",
 		},
 		{
 			description: "Enabling Docker service",
-			command:     "systemctl enable docker && systemctl start docker",
+			command:     "sudo systemctl enable docker && sudo systemctl start docker",
 		},
 		{
 			description: "Installing Docker Compose",
-			command:     `curl -L "https://github.com/docker/compose/releases/download/$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep -Po '"tag_name": "\K.*\d')" -o /usr/local/bin/docker-compose && chmod +x /usr/local/bin/docker-compose`,
+			command:     `sudo curl -L "https://github.com/docker/compose/releases/download/$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep -Po '"tag_name": "\K.*\d')" -o /usr/local/bin/docker-compose && sudo	 chmod +x /usr/local/bin/docker-compose`,
 		},
 		{
 			description: "Verifying Docker installation",
-			command:     "docker run hello-world",
+			command:     "sudo docker run hello-world",
 		},
 	}
 
