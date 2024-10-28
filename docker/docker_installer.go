@@ -63,6 +63,10 @@ func (d *DockerSetup) Install() error {
 			command:     `sudo curl -L "https://github.com/docker/compose/releases/download/$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep -Po '"tag_name": "\K.*\d')" -o /usr/local/bin/docker-compose && sudo chmod +x /usr/local/bin/docker-compose`,
 		},
 		{
+			description: "Setting correct permissions for Docker socket",
+			command:     "sudo chmod 666 /var/run/docker.sock",
+		},
+		{
 			description: "Verifying Docker installation",
 			command:     "docker run hello-world",
 		},
