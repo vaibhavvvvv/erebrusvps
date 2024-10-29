@@ -2,7 +2,9 @@ package docker
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"strings"
 )
 
 // DockerSetup handles the installation and configuration of Docker
@@ -15,6 +17,11 @@ func NewDockerSetup() *DockerSetup {
 
 // ExecuteCommand runs a shell command and logs output in real-time
 func (d *DockerSetup) ExecuteCommand(command string) error {
+	// Modify commands that need automatic yes responses
+	if strings.Contains(command, "apt-get") {
+		command = strings.Replace(command, "apt-get", "DEBIAN_FRONTEND=noninteractive apt-get -y", 1)
+	}
+
 	fmt.Printf("\n[COMMAND] Executing: %s\n", command)
 
 	cmd := exec.Command("sh", "-c", command)
@@ -82,17 +89,55 @@ func (d *DockerSetup) ExecuteCommand(command string) error {
 
 // Install performs the Docker installation and setup
 func (d *DockerSetup) Install() error {
-	steps := []struct {
+	// First, handle kernel updates and potential reboot
+	kernelSteps := []struct {
 		description string
 		command     string
 	}{
 		{
-			description: "Updating system",
-			command:     "sudo apt-get update && sudo apt-get upgrade -y",
+			description: "Updating package list",
+			command:     "DEBIAN_FRONTEND=noninteractive apt-get update",
 		},
 		{
+			description: "Upgrading all packages",
+			command:     "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y",
+		},
+		{
+			description: "Performing distribution upgrade (including kernel)",
+			command:     "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y",
+		},
+	}
+
+	// Execute kernel updates
+	for _, step := range kernelSteps {
+		fmt.Printf("\nExecuting: %s\n", step.description)
+		if err := d.ExecuteCommand(step.command); err != nil {
+			return fmt.Errorf("%s failed: %v", step.description, err)
+		}
+	}
+
+	// Check if reboot is needed
+	if _, err := os.Stat("/var/run/reboot-required"); err == nil {
+		fmt.Println("\n[SYSTEM] Kernel update detected, system requires reboot")
+		fmt.Println("[SYSTEM] Scheduling reboot in 1 minute...")
+
+		if err := d.ExecuteCommand("sudo shutdown -r +1"); err != nil {
+			return fmt.Errorf("failed to schedule reboot: %v", err)
+		}
+
+		fmt.Println("[SYSTEM] Reboot scheduled. Please wait for the system to restart and run this installer again.")
+		fmt.Println("[SYSTEM] The program will now exit. Please reconnect after ~2 minutes and run again.")
+		os.Exit(0)
+	}
+
+	// If no reboot needed or after reboot, proceed with Docker installation
+	dockerSteps := []struct {
+		description string
+		command     string
+	}{
+		{
 			description: "Installing required packages",
-			command:     "sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common",
+			command:     "DEBIAN_FRONTEND=noninteractive apt-get install -y apt-transport-https ca-certificates curl software-properties-common",
 		},
 		{
 			description: "Adding Docker's GPG key",
@@ -103,8 +148,12 @@ func (d *DockerSetup) Install() error {
 			command:     `echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null`,
 		},
 		{
+			description: "Updating package list with Docker repository",
+			command:     "DEBIAN_FRONTEND=noninteractive apt-get update",
+		},
+		{
 			description: "Installing Docker Engine",
-			command:     "sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io",
+			command:     "DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io",
 		},
 		{
 			description: "Setting up Docker group",
@@ -128,7 +177,8 @@ func (d *DockerSetup) Install() error {
 		},
 	}
 
-	for _, step := range steps {
+	// Execute Docker installation steps
+	for _, step := range dockerSteps {
 		fmt.Printf("\nExecuting: %s\n", step.description)
 		if err := d.ExecuteCommand(step.command); err != nil {
 			return fmt.Errorf("%s failed: %v", step.description, err)
