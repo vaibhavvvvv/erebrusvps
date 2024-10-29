@@ -14,7 +14,7 @@ func NewDockerSetup() *DockerSetup {
 }
 
 // executeCommand runs a shell command
-func (d *DockerSetup) executeCommand(command string) error {
+func (d *DockerSetup) ExecuteCommand(command string) error {
 	cmd := exec.Command("sh", "-c", command)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -74,7 +74,7 @@ func (d *DockerSetup) Install() error {
 
 	for _, step := range steps {
 		fmt.Printf("\nExecuting: %s\n", step.description)
-		if err := d.executeCommand(step.command); err != nil {
+		if err := d.ExecuteCommand(step.command); err != nil {
 			return fmt.Errorf("%s failed: %v", step.description, err)
 		}
 	}
