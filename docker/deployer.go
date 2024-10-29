@@ -114,23 +114,27 @@ func (d *DockerSetup) cloneRepository(gitURL, workDir string) error {
 func (d *DockerSetup) ensureDockerfile(workDir string) error {
 	dockerfilePath := filepath.Join(workDir, "Dockerfile")
 	if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
-		// Create a default Dockerfile for Go applications
-		dockerfile := `FROM golang:1.21-alpine
+		// Create a default Dockerfile for React applications
+		dockerfile := `FROM node:16-alpine
 WORKDIR /app
+COPY package*.json ./
+RUN npm install
 COPY . .
-RUN go mod download
-RUN go build -o main .
+RUN npm run build
 EXPOSE 8080
-CMD ["./main"]`
+RUN npm install -g serve
+CMD ["serve", "-s", "build", "-l", "8080"]`
 		return os.WriteFile(dockerfilePath, []byte(dockerfile), 0644)
 	}
 	return nil
 }
 
 func (d *DockerSetup) createDockerCompose(workDir string, deployment Deployment) error {
-	template := `version: '3'
-services:
-  %s:
+	// Convert project name to lowercase and replace invalid characters
+	// sanitizedName := strings.ToLower(strings.ReplaceAll(deployment.ProjectName, "-", "_"))
+
+	template := `services:
+  app:
     build: .
     ports:
       - "%s:%s"
@@ -147,11 +151,10 @@ networks:
 	// Format environment variables
 	var envVars strings.Builder
 	for k, v := range deployment.EnvVars {
-		envVars.WriteString(fmt.Sprintf("      - %s=%s\n", k, v))
+		envVars.WriteString(fmt.Sprintf("      %s: %s\n", k, v))
 	}
 
 	compose := fmt.Sprintf(template,
-		deployment.ProjectName,
 		deployment.Port,
 		"8080", // assuming the app listens on 8080 internally
 		envVars.String(),
