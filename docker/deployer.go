@@ -24,37 +24,46 @@ type DeploymentResult struct {
 }
 
 func (d *DockerSetup) DeployProject(deployment Deployment) (*DeploymentResult, error) {
+	fmt.Printf("\n[DEPLOY] Starting deployment for project: %s\n", deployment.ProjectName)
+
 	// Create workspace directory
 	workDir := filepath.Join("/opt/deployments", deployment.ProjectName)
+	fmt.Printf("[DEPLOY] Creating workspace directory: %s\n", workDir)
 	if err := os.MkdirAll(workDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create workspace: %v", err)
 	}
 
 	// Clone repository
+	fmt.Printf("[DEPLOY] Cloning repository: %s\n", deployment.GitURL)
 	if err := d.cloneRepository(deployment.GitURL, workDir); err != nil {
 		return nil, fmt.Errorf("failed to clone repository: %v", err)
 	}
 
 	// Create Dockerfile if it doesn't exist
+	fmt.Printf("[DEPLOY] Ensuring Dockerfile exists\n")
 	if err := d.ensureDockerfile(workDir); err != nil {
 		return nil, fmt.Errorf("failed to create Dockerfile: %v", err)
 	}
 
 	// Create docker-compose.yml
+	fmt.Printf("[DEPLOY] Creating docker-compose.yml\n")
 	if err := d.createDockerCompose(workDir, deployment); err != nil {
 		return nil, fmt.Errorf("failed to create docker-compose.yml: %v", err)
 	}
 
 	// Build and run the container
+	fmt.Printf("[DEPLOY] Building and running containers\n")
 	if err := d.buildAndRun(workDir, deployment); err != nil {
 		return nil, fmt.Errorf("failed to build and run: %v", err)
 	}
 
 	// Configure Nginx reverse proxy
+	fmt.Printf("[DEPLOY] Configuring Nginx reverse proxy\n")
 	if err := d.configureNginx(deployment); err != nil {
 		return nil, fmt.Errorf("failed to configure nginx: %v", err)
 	}
 
+	fmt.Printf("[DEPLOY] Deployment completed successfully!\n")
 	return &DeploymentResult{
 		Status: "success",
 		URL:    fmt.Sprintf("http://%s.localhost", deployment.ProjectName),
@@ -63,7 +72,10 @@ func (d *DockerSetup) DeployProject(deployment Deployment) (*DeploymentResult, e
 }
 
 func (d *DockerSetup) cloneRepository(gitURL, workDir string) error {
+	fmt.Printf("[GIT] Cloning repository from %s to %s\n", gitURL, workDir)
 	cmd := exec.Command("git", "clone", gitURL, workDir)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
@@ -118,12 +130,18 @@ networks:
 
 func (d *DockerSetup) buildAndRun(workDir string, deployment Deployment) error {
 	// Create network if it doesn't exist
+	fmt.Printf("[DOCKER] Creating network: deployment-network\n")
 	networkCmd := exec.Command("docker", "network", "create", "deployment-network")
+	networkCmd.Stdout = os.Stdout
+	networkCmd.Stderr = os.Stderr
 	networkCmd.Run() // Ignore error if network already exists
 
 	// Build and run using docker-compose
+	fmt.Printf("[DOCKER] Building and starting containers\n")
 	cmd := exec.Command("docker-compose", "up", "--build", "-d")
 	cmd.Dir = workDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
