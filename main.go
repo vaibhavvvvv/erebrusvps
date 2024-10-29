@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 )
 
 //lint:ignore U1000 logHandler is used to wrap HTTP handlers
@@ -14,11 +15,6 @@ func logHandler(handler http.HandlerFunc) http.HandlerFunc {
 		fmt.Printf("\n[API] %s %s\n", r.Method, r.URL.Path)
 		handler(w, r)
 	}
-}
-
-// Create a named handler function instead of an anonymous one
-func rootHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Hello, World!")
 }
 
 // Simplified request structure matching docker.Deployment
@@ -38,6 +34,24 @@ func deploymentHandler(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&deployment); err != nil {
 		http.Error(w, "Error parsing JSON", http.StatusBadRequest)
 		return
+	}
+
+	// Validate required fields
+	if deployment.GitURL == "" {
+		http.Error(w, "git_url is required", http.StatusBadRequest)
+		return
+	}
+
+	// Set default port if not provided
+	if deployment.Port == "" {
+		deployment.Port = "3000" // or generate a random available port
+	}
+
+	// Set default project name if not provided
+	if deployment.ProjectName == "" {
+		// Extract project name from git URL
+		parts := strings.Split(deployment.GitURL, "/")
+		deployment.ProjectName = strings.TrimSuffix(parts[len(parts)-1], ".git")
 	}
 
 	dockerSetup := docker.NewDockerSetup()
@@ -67,7 +81,6 @@ func main() {
 	}
 
 	// Add route handlers
-	http.HandleFunc("/", logHandler(rootHandler))
 	http.HandleFunc("/deploy", logHandler(deploymentHandler))
 
 	// Start the HTTP server
