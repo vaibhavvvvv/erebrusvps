@@ -26,8 +26,14 @@ type DeploymentResult struct {
 func (d *DockerSetup) DeployProject(deployment Deployment) (*DeploymentResult, error) {
 	fmt.Printf("\n[DEPLOY] Starting deployment for project: %s\n", deployment.ProjectName)
 
+	// Use home directory instead of /opt
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get home directory: %v", err)
+	}
+
 	// Create workspace directory
-	workDir := filepath.Join("/opt/deployments", deployment.ProjectName)
+	workDir := filepath.Join(homeDir, "deployments", deployment.ProjectName)
 	fmt.Printf("[DEPLOY] Creating workspace directory: %s\n", workDir)
 	if err := os.MkdirAll(workDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create workspace: %v", err)
@@ -64,6 +70,12 @@ func (d *DockerSetup) DeployProject(deployment Deployment) (*DeploymentResult, e
 	}
 
 	fmt.Printf("[DEPLOY] Deployment completed successfully!\n")
+	fmt.Println(&DeploymentResult{
+		Status: "success",
+		URL:    fmt.Sprintf("http://%s.localhost", deployment.ProjectName),
+		Port:   deployment.Port,
+	})
+
 	return &DeploymentResult{
 		Status: "success",
 		URL:    fmt.Sprintf("http://%s.localhost", deployment.ProjectName),
