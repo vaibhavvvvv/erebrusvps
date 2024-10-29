@@ -85,10 +85,30 @@ func (d *DockerSetup) DeployProject(deployment Deployment) (*DeploymentResult, e
 
 func (d *DockerSetup) cloneRepository(gitURL, workDir string) error {
 	fmt.Printf("[GIT] Cloning repository from %s to %s\n", gitURL, workDir)
+
+	// Check if directory exists
+	if _, err := os.Stat(workDir); err == nil {
+		fmt.Printf("[GIT] Directory exists, removing it first...\n")
+		if err := os.RemoveAll(workDir); err != nil {
+			return fmt.Errorf("failed to clean existing directory: %v", err)
+		}
+	}
+
+	// Create fresh directory
+	if err := os.MkdirAll(filepath.Dir(workDir), 0755); err != nil {
+		return fmt.Errorf("failed to create parent directory: %v", err)
+	}
+
 	cmd := exec.Command("git", "clone", gitURL, workDir)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git clone failed: %v", err)
+	}
+
+	fmt.Printf("[GIT] Repository cloned successfully\n")
+	return nil
 }
 
 func (d *DockerSetup) ensureDockerfile(workDir string) error {
