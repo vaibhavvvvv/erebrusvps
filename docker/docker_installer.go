@@ -165,7 +165,7 @@ func (d *DockerSetup) Install() error {
 		},
 		{
 			description: "Installing Docker Compose",
-			command:     `sudo curl -L "https://github.com/docker/compose/releases/download/$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep -Po '"tag_name": "\K.*\d')" -o /usr/local/bin/docker-compose && sudo chmod +x /usr/local/bin/docker-compose`,
+			command:     `sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose && sudo chmod +x /usr/local/bin/docker-compose`,
 		},
 		{
 			description: "Setting correct permissions for Docker socket",

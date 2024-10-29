@@ -148,9 +148,9 @@ func (d *DockerSetup) buildAndRun(workDir string, deployment Deployment) error {
 	networkCmd.Stderr = os.Stderr
 	networkCmd.Run() // Ignore error if network already exists
 
-	// Build and run using docker-compose
+	// Build and run using docker compose
 	fmt.Printf("[DOCKER] Building and starting containers\n")
-	cmd := exec.Command("docker-compose", "up", "--build", "-d")
+	cmd := exec.Command("docker", "compose", "up", "--build", "-d")
 	cmd.Dir = workDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
