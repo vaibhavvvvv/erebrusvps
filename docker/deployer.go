@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	// "encoding/json"
 )
 
@@ -130,16 +129,13 @@ CMD ["serve", "-s", "build", "-l", "8080"]`
 }
 
 func (d *DockerSetup) createDockerCompose(workDir string, deployment Deployment) error {
-	// Convert project name to lowercase and replace invalid characters
-	// sanitizedName := strings.ToLower(strings.ReplaceAll(deployment.ProjectName, "-", "_"))
-
 	template := `services:
   app:
     build: .
     ports:
       - "%s:%s"
     environment:
-%s
+      PORT: "%s"
     restart: always
     networks:
       - deployment-network
@@ -148,16 +144,10 @@ networks:
   deployment-network:
     external: true`
 
-	// Format environment variables
-	var envVars strings.Builder
-	for k, v := range deployment.EnvVars {
-		envVars.WriteString(fmt.Sprintf("      %s: %s\n", k, v))
-	}
-
 	compose := fmt.Sprintf(template,
 		deployment.Port,
-		"8080", // assuming the app listens on 8080 internally
-		envVars.String(),
+		"8080", // internal port
+		"8080", // environment variable PORT
 	)
 
 	return os.WriteFile(filepath.Join(workDir, "docker-compose.yml"), []byte(compose), 0644)
