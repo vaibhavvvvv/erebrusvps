@@ -46,14 +46,12 @@ func getNextAvailablePort() string {
 func (d *DockerSetup) DeployProject(deployment Deployment) (*DeploymentResult, error) {
 	fmt.Printf("\n[DEPLOY] Starting deployment for project: %s\n", deployment.ProjectName)
 
-	// If no port specified, get next available port
-	if deployment.Port == "" {
-		deployment.Port = getNextAvailablePort()
-		fmt.Printf("[DEPLOY] Assigned new port %s for project %s\n", deployment.Port, deployment.ProjectName)
-	} else if !isPortAvailable(deployment.Port) {
-		// If requested port is not available, get a new one
-		deployment.Port = getNextAvailablePort()
-		fmt.Printf("[DEPLOY] Requested port unavailable, using port %s for project %s\n", deployment.Port, deployment.ProjectName)
+	// Always get next available port if the requested port is in use
+	if deployment.Port == "" || !isPortAvailable(deployment.Port) {
+		newPort := getNextAvailablePort()
+		fmt.Printf("[DEPLOY] Port %s is occupied, assigning port %s for project %s\n",
+			deployment.Port, newPort, deployment.ProjectName)
+		deployment.Port = newPort
 	}
 
 	// Store the port mapping
@@ -274,9 +272,16 @@ server {
 	return nil
 }
 
-// Add this new function to check if a port is available
+// Improve isPortAvailable to check both Docker and system ports
 func isPortAvailable(port string) bool {
-	cmd := fmt.Sprintf("netstat -tuln | grep LISTEN | grep :%s", port)
-	err := exec.Command("sh", "-c", cmd).Run()
-	return err != nil // If error, port is not in use
+	// Check if Docker is using the port
+	dockerCmd := fmt.Sprintf("docker ps --format '{{.Ports}}' | grep ':%s->'", port)
+	dockerErr := exec.Command("sh", "-c", dockerCmd).Run()
+
+	// Check if system is using the port
+	netstatCmd := fmt.Sprintf("netstat -tuln | grep LISTEN | grep :%s", port)
+	netstatErr := exec.Command("sh", "-c", netstatCmd).Run()
+
+	// Port is available if both commands return errors (port not found)
+	return dockerErr != nil && netstatErr != nil
 }
