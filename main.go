@@ -81,8 +81,22 @@ func main() {
 		log.Fatalf("Nginx installation failed: %v", err)
 	}
 
-	// Add route handlers
-	http.HandleFunc("/deploy", logHandler(deploymentHandler))
+	// Add CORS middleware
+	http.HandleFunc("/deploy", func(w http.ResponseWriter, r *http.Request) {
+		// Set CORS headers
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		// Handle preflight
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		// Call your existing deployment handler
+		deploymentHandler(w, r)
+	})
 
 	// Add WebSocket handler
 	http.HandleFunc("/ws", websocket.Logger.HandleWebSocket)
