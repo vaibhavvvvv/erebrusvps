@@ -5,7 +5,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
 	// "encoding/json"
+	"erebrusvps/websocket"
 )
 
 type Deployment struct {
@@ -44,13 +46,19 @@ func getNextAvailablePort() string {
 }
 
 func (d *DockerSetup) DeployProject(deployment Deployment) (*DeploymentResult, error) {
-	fmt.Printf("\n[DEPLOY] Starting deployment for project: %s\n", deployment.ProjectName)
+	// Send logs through WebSocket
+	sendLog := func(message string) {
+		websocket.Logger.SendLog(message)
+		fmt.Println(message) // Still print to console
+	}
+
+	sendLog(fmt.Sprintf("\n[DEPLOY] Starting deployment for project: %s", deployment.ProjectName))
 
 	// Always get next available port if the requested port is in use
 	if deployment.Port == "" || !isPortAvailable(deployment.Port) {
 		newPort := getNextAvailablePort()
-		fmt.Printf("[DEPLOY] Port %s is occupied, assigning port %s for project %s\n",
-			deployment.Port, newPort, deployment.ProjectName)
+		sendLog(fmt.Sprintf("[DEPLOY] Port %s is occupied, assigning port %s for project %s",
+			deployment.Port, newPort, deployment.ProjectName))
 		deployment.Port = newPort
 	}
 
@@ -69,42 +77,42 @@ func (d *DockerSetup) DeployProject(deployment Deployment) (*DeploymentResult, e
 
 	// Create workspace directory
 	workDir := filepath.Join(homeDir, "deployments", deployment.ProjectName)
-	fmt.Printf("[DEPLOY] Creating workspace directory: %s\n", workDir)
+	sendLog(fmt.Sprintf("[DEPLOY] Creating workspace directory: %s", workDir))
 	if err := os.MkdirAll(workDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create workspace: %v", err)
 	}
 
 	// Clone repository
-	fmt.Printf("[DEPLOY] Cloning repository: %s\n", deployment.GitURL)
+	sendLog(fmt.Sprintf("[DEPLOY] Cloning repository: %s", deployment.GitURL))
 	if err := d.cloneRepository(deployment.GitURL, workDir); err != nil {
 		return nil, fmt.Errorf("failed to clone repository: %v", err)
 	}
 
 	// Create Dockerfile if it doesn't exist
-	fmt.Printf("[DEPLOY] Ensuring Dockerfile exists\n")
+	sendLog("[DEPLOY] Ensuring Dockerfile exists")
 	if err := d.ensureDockerfile(workDir); err != nil {
 		return nil, fmt.Errorf("failed to create Dockerfile: %v", err)
 	}
 
 	// Create docker-compose.yml
-	fmt.Printf("[DEPLOY] Creating docker-compose.yml\n")
+	sendLog("[DEPLOY] Creating docker-compose.yml")
 	if err := d.createDockerCompose(workDir, deployment); err != nil {
 		return nil, fmt.Errorf("failed to create docker-compose.yml: %v", err)
 	}
 
 	// Build and run the container
-	fmt.Printf("[DEPLOY] Building and running containers\n")
+	sendLog("[DEPLOY] Building and running containers")
 	if err := d.buildAndRun(workDir, deployment); err != nil {
 		return nil, fmt.Errorf("failed to build and run: %v", err)
 	}
 
 	// Configure Nginx reverse proxy
-	fmt.Printf("[DEPLOY] Configuring Nginx reverse proxy\n")
+	sendLog("[DEPLOY] Configuring Nginx reverse proxy")
 	if err := d.configureNginx(deployment); err != nil {
 		return nil, fmt.Errorf("failed to configure nginx: %v", err)
 	}
 
-	fmt.Printf("[DEPLOY] Deployment completed successfully!\n")
+	sendLog("[DEPLOY] Deployment completed successfully!")
 	fmt.Println(&DeploymentResult{
 		Status: "success",
 		URL:    fmt.Sprintf("http://%s.localhost", deployment.ProjectName),

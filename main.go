@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"erebrusvps/docker"
+	"erebrusvps/websocket"
 	"fmt"
 	"log"
 	"net/http"
@@ -82,6 +83,9 @@ func main() {
 
 	// Add route handlers
 	http.HandleFunc("/deploy", logHandler(deploymentHandler))
+
+	// Add WebSocket handler
+	http.HandleFunc("/ws", websocket.Logger.HandleWebSocket)
 
 	// Start the HTTP server
 	fmt.Println("[SERVER] Starting on :8080")
