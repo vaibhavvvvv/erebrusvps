@@ -215,15 +215,8 @@ func (d *DockerSetup) buildAndRun(workDir string, deployment Deployment) error {
 }
 
 func (d *DockerSetup) configureNginx(deployment Deployment) error {
-	// Remove existing nginx configuration if it exists
-	configPath := fmt.Sprintf("/etc/nginx/sites-available/%s", deployment.ProjectName)
-	symlinkPath := fmt.Sprintf("/etc/nginx/sites-enabled/%s", deployment.ProjectName)
-
-	// Remove existing symlink if it exists
-	os.Remove(symlinkPath)
-
-	configTemplate := `
-server {
+	// Create config content first
+	configTemplate := `server {
     listen 80;
     server_name %s.localhost;
 
@@ -248,23 +241,33 @@ server {
 }`
 
 	config := fmt.Sprintf(configTemplate, deployment.ProjectName, deployment.Port)
+	configPath := fmt.Sprintf("/etc/nginx/sites-available/%s", deployment.ProjectName)
+	symlinkPath := fmt.Sprintf("/etc/nginx/sites-enabled/%s", deployment.ProjectName)
 
-	// Write config file
-	if err := os.WriteFile(configPath, []byte(config), 0644); err != nil {
-		return fmt.Errorf("failed to write nginx config: %v", err)
+	// Write config using sudo
+	tmpFile := fmt.Sprintf("/tmp/nginx_%s", deployment.ProjectName)
+	if err := os.WriteFile(tmpFile, []byte(config), 0644); err != nil {
+		return fmt.Errorf("failed to write temporary config: %v", err)
 	}
 
-	// Create symlink
-	if err := os.Symlink(configPath, symlinkPath); err != nil && !os.IsExist(err) {
+	// Move file to nginx directory using sudo
+	if err := exec.Command("sudo", "mv", tmpFile, configPath).Run(); err != nil {
+		return fmt.Errorf("failed to move nginx config: %v", err)
+	}
+
+	// Remove existing symlink if it exists
+	exec.Command("sudo", "rm", "-f", symlinkPath).Run()
+
+	// Create symlink using sudo
+	if err := exec.Command("sudo", "ln", "-s", configPath, symlinkPath).Run(); err != nil {
 		return fmt.Errorf("failed to create nginx symlink: %v", err)
 	}
 
-	// Test nginx configuration
+	// Test and reload nginx
 	if err := exec.Command("sudo", "nginx", "-t").Run(); err != nil {
 		return fmt.Errorf("nginx configuration test failed: %v", err)
 	}
 
-	// Reload Nginx
 	if err := exec.Command("sudo", "systemctl", "reload", "nginx").Run(); err != nil {
 		return fmt.Errorf("failed to reload nginx: %v", err)
 	}
