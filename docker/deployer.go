@@ -25,6 +25,15 @@ type DeploymentResult struct {
 func (d *DockerSetup) DeployProject(deployment Deployment) (*DeploymentResult, error) {
 	fmt.Printf("\n[DEPLOY] Starting deployment for project: %s\n", deployment.ProjectName)
 
+	// Check if port is available
+	if !isPortAvailable(deployment.Port) {
+		fmt.Printf("[DEPLOY] Port %s is already in use, stopping existing containers\n", deployment.Port)
+		stopCmd := fmt.Sprintf("docker stop $(docker ps -q --filter publish=%s)", deployment.Port)
+		exec.Command("sh", "-c", stopCmd).Run()
+		rmCmd := fmt.Sprintf("docker rm $(docker ps -aq --filter publish=%s)", deployment.Port)
+		exec.Command("sh", "-c", rmCmd).Run()
+	}
+
 	// Use home directory instead of /opt
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -154,6 +163,25 @@ networks:
 }
 
 func (d *DockerSetup) buildAndRun(workDir string, deployment Deployment) error {
+	// Stop and remove existing containers for this project
+	fmt.Printf("[DOCKER] Cleaning up existing deployment\n")
+	cleanupCmd := exec.Command("docker", "compose", "down", "-v")
+	cleanupCmd.Dir = workDir
+	cleanupCmd.Stdout = os.Stdout
+	cleanupCmd.Stderr = os.Stderr
+	cleanupCmd.Run() // Ignore errors as containers might not exist
+
+	// Remove any existing containers using the same port
+	checkPortCmd := fmt.Sprintf("docker ps -q --filter publish=%s", deployment.Port)
+	output, err := exec.Command("sh", "-c", checkPortCmd).Output()
+	if err == nil && len(output) > 0 {
+		fmt.Printf("[DOCKER] Found existing container using port %s, stopping it\n", deployment.Port)
+		stopCmd := fmt.Sprintf("docker stop $(docker ps -q --filter publish=%s)", deployment.Port)
+		exec.Command("sh", "-c", stopCmd).Run()
+		rmCmd := fmt.Sprintf("docker rm $(docker ps -aq --filter publish=%s)", deployment.Port)
+		exec.Command("sh", "-c", rmCmd).Run()
+	}
+
 	// Create network if it doesn't exist
 	fmt.Printf("[DOCKER] Creating network: deployment-network\n")
 	networkCmd := exec.Command("docker", "network", "create", "deployment-network")
@@ -163,7 +191,7 @@ func (d *DockerSetup) buildAndRun(workDir string, deployment Deployment) error {
 
 	// Build and run using docker compose
 	fmt.Printf("[DOCKER] Building and starting containers\n")
-	cmd := exec.Command("docker", "compose", "up", "--build", "-d")
+	cmd := exec.Command("docker", "compose", "up", "--build", "-d", "--force-recreate")
 	cmd.Dir = workDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -171,6 +199,13 @@ func (d *DockerSetup) buildAndRun(workDir string, deployment Deployment) error {
 }
 
 func (d *DockerSetup) configureNginx(deployment Deployment) error {
+	// Remove existing nginx configuration if it exists
+	configPath := fmt.Sprintf("/etc/nginx/sites-available/%s", deployment.ProjectName)
+	symlinkPath := fmt.Sprintf("/etc/nginx/sites-enabled/%s", deployment.ProjectName)
+
+	// Remove existing symlink if it exists
+	os.Remove(symlinkPath)
+
 	configTemplate := `
 server {
     listen 80;
@@ -183,23 +218,47 @@ server {
         proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
         proxy_cache_bypass $http_upgrade;
+        
+        # Add WebSocket support
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Add CORS headers
+        add_header 'Access-Control-Allow-Origin' '*';
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS';
+        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range';
     }
 }`
 
 	config := fmt.Sprintf(configTemplate, deployment.ProjectName, deployment.Port)
-	configPath := fmt.Sprintf("/etc/nginx/sites-available/%s", deployment.ProjectName)
 
 	// Write config file
 	if err := os.WriteFile(configPath, []byte(config), 0644); err != nil {
-		return err
+		return fmt.Errorf("failed to write nginx config: %v", err)
 	}
 
 	// Create symlink
-	symlink := fmt.Sprintf("/etc/nginx/sites-enabled/%s", deployment.ProjectName)
-	if err := os.Symlink(configPath, symlink); err != nil && !os.IsExist(err) {
-		return err
+	if err := os.Symlink(configPath, symlinkPath); err != nil && !os.IsExist(err) {
+		return fmt.Errorf("failed to create nginx symlink: %v", err)
+	}
+
+	// Test nginx configuration
+	if err := exec.Command("sudo", "nginx", "-t").Run(); err != nil {
+		return fmt.Errorf("nginx configuration test failed: %v", err)
 	}
 
 	// Reload Nginx
-	return exec.Command("sudo", "systemctl", "reload", "nginx").Run()
+	if err := exec.Command("sudo", "systemctl", "reload", "nginx").Run(); err != nil {
+		return fmt.Errorf("failed to reload nginx: %v", err)
+	}
+
+	return nil
+}
+
+// Add this new function to check if a port is available
+func isPortAvailable(port string) bool {
+	cmd := fmt.Sprintf("netstat -tuln | grep LISTEN | grep :%s", port)
+	err := exec.Command("sh", "-c", cmd).Run()
+	return err != nil // If error, port is not in use
 }
