@@ -192,27 +192,16 @@ networks:
 }
 
 func (d *DockerSetup) buildAndRun(workDir string, deployment Deployment) error {
-	// Stop and remove existing containers for this project
-	fmt.Printf("[DOCKER] Cleaning up existing deployment\n")
+	// Stop and remove only this project's previous deployment if it exists
+	fmt.Printf("[DOCKER] Cleaning up existing deployment for %s\n", deployment.ProjectName)
 	cleanupCmd := exec.Command("docker", "compose", "down", "-v")
 	cleanupCmd.Dir = workDir
 	cleanupCmd.Stdout = os.Stdout
 	cleanupCmd.Stderr = os.Stderr
 	cleanupCmd.Run() // Ignore errors as containers might not exist
 
-	// Remove any existing containers using the same port
-	checkPortCmd := fmt.Sprintf("docker ps -q --filter publish=%s", deployment.Port)
-	output, err := exec.Command("sh", "-c", checkPortCmd).Output()
-	if err == nil && len(output) > 0 {
-		fmt.Printf("[DOCKER] Found existing container using port %s, stopping it\n", deployment.Port)
-		stopCmd := fmt.Sprintf("docker stop $(docker ps -q --filter publish=%s)", deployment.Port)
-		exec.Command("sh", "-c", stopCmd).Run()
-		rmCmd := fmt.Sprintf("docker rm $(docker ps -aq --filter publish=%s)", deployment.Port)
-		exec.Command("sh", "-c", rmCmd).Run()
-	}
-
 	// Create network if it doesn't exist
-	fmt.Printf("[DOCKER] Creating network: deployment-network\n")
+	fmt.Printf("[DOCKER] Ensuring deployment network exists\n")
 	networkCmd := exec.Command("docker", "network", "create", "deployment-network")
 	networkCmd.Stdout = os.Stdout
 	networkCmd.Stderr = os.Stderr
@@ -220,7 +209,7 @@ func (d *DockerSetup) buildAndRun(workDir string, deployment Deployment) error {
 
 	// Build and run using docker compose
 	fmt.Printf("[DOCKER] Building and starting containers\n")
-	cmd := exec.Command("docker", "compose", "up", "--build", "-d", "--force-recreate")
+	cmd := exec.Command("docker", "compose", "up", "--build", "-d")
 	cmd.Dir = workDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
