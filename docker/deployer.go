@@ -22,16 +22,45 @@ type DeploymentResult struct {
 	Error  string `json:"error,omitempty"`
 }
 
+type PortMapping struct {
+	Port        string
+	ProjectName string
+	GitURL      string
+}
+
+var usedPorts = make(map[string]PortMapping) // key: port number, value: project details
+var startingPort = 3000
+
+func getNextAvailablePort() string {
+	port := startingPort
+	for {
+		portStr := fmt.Sprintf("%d", port)
+		// Check if port is used by our deployments and system
+		if _, exists := usedPorts[portStr]; !exists && isPortAvailable(portStr) {
+			return portStr
+		}
+		port++
+	}
+}
+
 func (d *DockerSetup) DeployProject(deployment Deployment) (*DeploymentResult, error) {
 	fmt.Printf("\n[DEPLOY] Starting deployment for project: %s\n", deployment.ProjectName)
 
-	// Check if port is available
-	if !isPortAvailable(deployment.Port) {
-		fmt.Printf("[DEPLOY] Port %s is already in use, stopping existing containers\n", deployment.Port)
-		stopCmd := fmt.Sprintf("docker stop $(docker ps -q --filter publish=%s)", deployment.Port)
-		exec.Command("sh", "-c", stopCmd).Run()
-		rmCmd := fmt.Sprintf("docker rm $(docker ps -aq --filter publish=%s)", deployment.Port)
-		exec.Command("sh", "-c", rmCmd).Run()
+	// If no port specified, get next available port
+	if deployment.Port == "" {
+		deployment.Port = getNextAvailablePort()
+		fmt.Printf("[DEPLOY] Assigned new port %s for project %s\n", deployment.Port, deployment.ProjectName)
+	} else if !isPortAvailable(deployment.Port) {
+		// If requested port is not available, get a new one
+		deployment.Port = getNextAvailablePort()
+		fmt.Printf("[DEPLOY] Requested port unavailable, using port %s for project %s\n", deployment.Port, deployment.ProjectName)
+	}
+
+	// Store the port mapping
+	usedPorts[deployment.Port] = PortMapping{
+		Port:        deployment.Port,
+		ProjectName: deployment.ProjectName,
+		GitURL:      deployment.GitURL,
 	}
 
 	// Use home directory instead of /opt
