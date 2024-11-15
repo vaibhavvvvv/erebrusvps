@@ -115,13 +115,13 @@ func (d *DockerSetup) DeployProject(deployment Deployment) (*DeploymentResult, e
 	sendLog("[DEPLOY] Deployment completed successfully!")
 	fmt.Println(&DeploymentResult{
 		Status: "success",
-		URL:    fmt.Sprintf("http://%s.localhost", deployment.ProjectName),
+		URL:    fmt.Sprintf("https://%s.localhost", deployment.ProjectName),
 		Port:   deployment.Port,
 	})
 
 	return &DeploymentResult{
 		Status: "success",
-		URL:    fmt.Sprintf("http://%s.localhost", deployment.ProjectName),
+		URL:    fmt.Sprintf("https://%s.localhost", deployment.ProjectName),
 		Port:   deployment.Port,
 	}, nil
 }
@@ -223,10 +223,20 @@ func (d *DockerSetup) buildAndRun(workDir string, deployment Deployment) error {
 }
 
 func (d *DockerSetup) configureNginx(deployment Deployment) error {
-	// Create config content first
 	configTemplate := `server {
     listen 80;
+    listen 443 ssl;
     server_name %s.localhost;
+
+    ssl_certificate /etc/nginx/ssl/server.crt;
+    ssl_certificate_key /etc/nginx/ssl/server.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    # Redirect HTTP to HTTPS
+    if ($scheme != "https") {
+        return 301 https://$host$request_uri;
+    }
 
     location / {
         proxy_pass http://localhost:%s;
