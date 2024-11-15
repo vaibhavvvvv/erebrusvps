@@ -1,23 +1,13 @@
-# Step 1: Use the official Golang image as the base
-FROM golang:1.20-alpine
-
-# Step 2: Set the working directory inside the container
+FROM golang:alpine as builder
 WORKDIR /app
-
-# Step 3: Copy the go.mod and go.sum files to the working directory
-COPY go.mod go.sum ./
-
-# Step 4: Download the Go module dependencies
-RUN go mod tidy
-
-# Step 5: Copy the rest of the application code to the working directory
+COPY go.mod .
+COPY go.sum .
+RUN apk add --no-cache build-base openssl
+RUN go mod download
 COPY . .
-
-# Step 6: Build the Go application
-RUN go build -o main .
-
-# Step 7: Expose the application's port (adjust as needed)
-EXPOSE 8080
-
-# Step 8: Set the entry point to run the application
-CMD ["./main"]
+RUN apk add --no-cache git && go build -o erebrusvps . && apk del git
+FROM alpine
+WORKDIR /app
+RUN apk add --no-cache openssl
+COPY --from=builder /app/erebrusvps .
+CMD [ "./erebrusvps" ]
