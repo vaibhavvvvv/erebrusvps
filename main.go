@@ -80,22 +80,48 @@ func generateSSLCertificates(dockerSetup *docker.DockerSetup) error {
 		return fmt.Errorf("failed to create certs directory: %v", err)
 	}
 
-	// Generate self-signed certificate
+	// Create config file for SAN (Subject Alternative Names)
+	configContent := `[req]
+distinguished_name = req_distinguished_name
+x509_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+C = US
+ST = State
+L = City
+O = Organization
+OU = Development
+CN = localhost
+
+[v3_req]
+basicConstraints = CA:FALSE
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = localhost
+DNS.2 = *.localhost
+IP.1 = 127.0.0.1`
+
+	configPath := filepath.Join(certDir, "openssl.cnf")
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		return fmt.Errorf("failed to write OpenSSL config: %v", err)
+	}
+
+	// Generate self-signed certificate with SAN
 	cmd := fmt.Sprintf(`openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 		-keyout %s/server.key \
 		-out %s/server.crt \
-		-subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"`,
-		certDir, certDir)
+		-config %s`,
+		certDir, certDir, configPath)
 
 	if err := dockerSetup.ExecuteCommand(cmd); err != nil {
 		return fmt.Errorf("failed to generate SSL certificates: %v", err)
 	}
 
-	// Move certificates to nginx directory
-	if err := dockerSetup.ExecuteCommand(fmt.Sprintf("sudo cp %s/server.crt /etc/nginx/ssl/", certDir)); err != nil {
-		return err
-	}
-	if err := dockerSetup.ExecuteCommand(fmt.Sprintf("sudo cp %s/server.key /etc/nginx/ssl/", certDir)); err != nil {
+	// Move certificates to nginx directory with proper permissions
+	if err := dockerSetup.ExecuteCommand(fmt.Sprintf("sudo mkdir -p /etc/nginx/ssl && sudo cp %s/server.crt /etc/nginx/ssl/ && sudo cp %s/server.key /etc/nginx/ssl/ && sudo chmod 644 /etc/nginx/ssl/server.crt && sudo chmod 600 /etc/nginx/ssl/server.key", certDir, certDir)); err != nil {
 		return err
 	}
 
@@ -134,11 +160,13 @@ func main() {
 	}
 	certDir := filepath.Join(homeDir, "certs")
 
-	// Add CORS and handlers
+	// Add CORS and handlers with updated headers
 	http.HandleFunc("/deploy", func(w http.ResponseWriter, r *http.Request) {
+		// Set CORS headers
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
