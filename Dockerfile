@@ -8,7 +8,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 
 # Step 4: Download the Go module dependencies
-RUN go mod download
+RUN go mod tidy
 
 # Step 5: Copy the rest of the application code to the working directory
 COPY . .
