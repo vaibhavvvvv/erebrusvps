@@ -80,23 +80,44 @@ func generateSSLCertificates(dockerSetup *docker.DockerSetup) error {
 		return fmt.Errorf("failed to create certs directory: %v", err)
 	}
 
-	// Create config file for SAN (Subject Alternative Names)
-	configContent := `[req]
+	// Create CA config
+	caConfigContent := `[req]
 distinguished_name = req_distinguished_name
-x509_extensions = v3_req
+x509_extensions = v3_ca
 prompt = no
 
 [req_distinguished_name]
 C = US
 ST = State
 L = City
-O = Organization
-OU = Development
+O = Development CA
+OU = Development CA Unit
+CN = Development CA Root
+
+[v3_ca]
+basicConstraints = critical,CA:TRUE
+keyUsage = critical,digitalSignature,keyCertSign,cRLSign
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always,issuer`
+
+	// Create server certificate config
+	serverConfigContent := `[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+C = US
+ST = State
+L = City
+O = Development
+OU = Development Unit
 CN = localhost
 
 [v3_req]
 basicConstraints = CA:FALSE
 keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
 subjectAltName = @alt_names
 
 [alt_names]
@@ -104,26 +125,57 @@ DNS.1 = localhost
 DNS.2 = *.localhost
 IP.1 = 127.0.0.1`
 
-	configPath := filepath.Join(certDir, "openssl.cnf")
-	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
-		return fmt.Errorf("failed to write OpenSSL config: %v", err)
+	// Write config files
+	caConfigPath := filepath.Join(certDir, "ca.cnf")
+	serverConfigPath := filepath.Join(certDir, "server.cnf")
+
+	if err := os.WriteFile(caConfigPath, []byte(caConfigContent), 0644); err != nil {
+		return fmt.Errorf("failed to write CA config: %v", err)
+	}
+	if err := os.WriteFile(serverConfigPath, []byte(serverConfigContent), 0644); err != nil {
+		return fmt.Errorf("failed to write server config: %v", err)
 	}
 
-	// Generate self-signed certificate with SAN
-	cmd := fmt.Sprintf(`openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-		-keyout %s/server.key \
-		-out %s/server.crt \
-		-config %s`,
-		certDir, certDir, configPath)
+	// Generate CA key and certificate
+	commands := []string{
+		// Generate CA private key
+		fmt.Sprintf("openssl genrsa -out %s/ca.key 4096", certDir),
 
-	if err := dockerSetup.ExecuteCommand(cmd); err != nil {
-		return fmt.Errorf("failed to generate SSL certificates: %v", err)
+		// Generate CA certificate
+		fmt.Sprintf("openssl req -x509 -new -nodes -key %s/ca.key -sha256 -days 3650 -out %s/ca.crt -config %s",
+			certDir, certDir, caConfigPath),
+
+		// Generate server private key
+		fmt.Sprintf("openssl genrsa -out %s/server.key 2048", certDir),
+
+		// Generate server CSR
+		fmt.Sprintf("openssl req -new -key %s/server.key -out %s/server.csr -config %s",
+			certDir, certDir, serverConfigPath),
+
+		// Sign server certificate with CA
+		fmt.Sprintf("openssl x509 -req -in %s/server.csr -CA %s/ca.crt -CAkey %s/ca.key -CAcreateserial -out %s/server.crt -days 365 -sha256 -extensions v3_req -extfile %s",
+			certDir, certDir, certDir, certDir, serverConfigPath),
+
+		// Set proper permissions and copy to nginx directory
+		fmt.Sprintf("sudo mkdir -p /etc/nginx/ssl"),
+		fmt.Sprintf("sudo cp %s/server.crt /etc/nginx/ssl/", certDir),
+		fmt.Sprintf("sudo cp %s/server.key /etc/nginx/ssl/", certDir),
+		fmt.Sprintf("sudo cp %s/ca.crt /etc/nginx/ssl/", certDir),
+		fmt.Sprintf("sudo chmod 644 /etc/nginx/ssl/server.crt"),
+		fmt.Sprintf("sudo chmod 600 /etc/nginx/ssl/server.key"),
+		fmt.Sprintf("sudo chmod 644 /etc/nginx/ssl/ca.crt"),
 	}
 
-	// Move certificates to nginx directory with proper permissions
-	if err := dockerSetup.ExecuteCommand(fmt.Sprintf("sudo mkdir -p /etc/nginx/ssl && sudo cp %s/server.crt /etc/nginx/ssl/ && sudo cp %s/server.key /etc/nginx/ssl/ && sudo chmod 644 /etc/nginx/ssl/server.crt && sudo chmod 600 /etc/nginx/ssl/server.key", certDir, certDir)); err != nil {
-		return err
+	// Execute all commands
+	for _, cmd := range commands {
+		if err := dockerSetup.ExecuteCommand(cmd); err != nil {
+			return fmt.Errorf("failed to execute command '%s': %v", cmd, err)
+		}
 	}
+
+	fmt.Println("[CERT] Certificates generated successfully")
+	fmt.Println("[CERT] CA certificate path:", filepath.Join(certDir, "ca.crt"))
+	fmt.Println("[CERT] Please install the CA certificate in your browser/system")
 
 	return nil
 }
